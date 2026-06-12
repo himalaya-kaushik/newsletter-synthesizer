@@ -1,0 +1,45 @@
+name: Fetch Newsletters
+
+on:
+  schedule:
+    # 02:30 UTC = 07:30 IST
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout vault
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone newsletter-synthesizer tool
+        run: git clone --depth 1 https://github.com/himalaya-kaushik/newsletter-synthesizer.git tool
+
+      - name: Install dependencies
+        run: pip install -r tool/requirements.txt
+
+      - name: Fetch newsletters
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NEWSLETTERS_DIR: Newsletters
+          STATE_FILE: .newsletter_state.json
+        run: python tool/fetch_newsletters.py
+
+      - name: Commit and push new newsletters
+        run: |
+          git config user.name "newsletter-bot"
+          git config user.email "newsletter-bot@users.noreply.github.com"
+          git add Newsletters .newsletter_state.json
+          git diff --staged --quiet || git commit -m "newsletters: $(date -u +%Y-%m-%d)"
+          git push
