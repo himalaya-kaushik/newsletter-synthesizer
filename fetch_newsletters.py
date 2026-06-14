@@ -79,16 +79,12 @@ def connect(address: str, password: str) -> imaplib.IMAP4_SSL:
 def fetch_new_uids(conn: imaplib.IMAP4_SSL, last_uid: int | None) -> list[int]:
     """Return UIDs of messages we haven't processed yet, oldest first."""
     if last_uid is not None:
-        # IMAP UID SEARCH UID N:* always includes the highest UID even when nothing
-        # is new, so we filter strictly server-side range and then client-side too.
         status, data = conn.uid("SEARCH", None, f"UID {last_uid + 1}:*")
         if status != "OK" or not data or not data[0]:
             return []
         raw_uids = [int(u) for u in data[0].split() if u]
-        # Filter strictly greater — the IMAP quirk means the boundary UID may come back.
         uids = [u for u in raw_uids if u > last_uid]
     else:
-        # First run: only pull the last 24 hours to avoid flooding the vault.
         since = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%d-%b-%Y")
         status, data = conn.uid("SEARCH", None, f"SINCE {since}")
         if status != "OK" or not data or not data[0]:
@@ -158,8 +154,7 @@ def get_text_body(msg) -> tuple[str, str]:
 # HTML → Markdown conversion and cleanup
 # ---------------------------------------------------------------------------
 
-# ‌ zero-width non-joiner, ​ zero-width space, ﻿ BOM — but NOT
-#   (non-breaking space), which some newsletters use as actual word spacing.
+
 _ZERO_WIDTH = re.compile(r"[‌​﻿]+")
 
 
@@ -167,28 +162,22 @@ def strip_noise_from_html(html: str) -> str:
     """Remove scripts, hidden elements, and zero-width chars before conversion."""
     soup = BeautifulSoup(html, "html.parser")
 
-    # Remove script / style / noscript blocks entirely.
     for tag in soup.find_all(["script", "style", "noscript"]):
         tag.decompose()
 
-    # Remove <img> tags (tracking pixels + inline images).
     for tag in soup.find_all("img"):
         tag.decompose()
 
-    # Remove elements whose src/href is a base64 data URI.
     for tag in soup.find_all(True):
         if tag.get("src", "").startswith("data:") or tag.get("href", "").startswith("data:"):
             tag.decompose()
 
-    # Remove display:none and visibility:hidden elements.
     for tag in soup.find_all(style=True):
         style = tag["style"].replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
             tag.decompose()
 
-    # Strip zero-width characters (‌ ​ ﻿) from all text nodes.
-    #   (non-breaking space) is intentionally left — some newsletters use it
-    # for word spacing and stripping it runs words together.
+    
     for text_node in soup.find_all(string=True):
         cleaned = _ZERO_WIDTH.sub("", text_node)
         if cleaned != text_node:
@@ -198,33 +187,22 @@ def strip_noise_from_html(html: str) -> str:
 
 
 _FOOTER_PATTERNS = [
-    # Unsubscribe lines
     re.compile(r"(?im)^.*unsubscribe.*$"),
-    # "View in browser" / "View this email in your browser"
     re.compile(r"(?im)^.*view (this email|in (your )?browser).*$"),
-    # "You received this because…" / "You're receiving this…"
     re.compile(r"(?im)^.*you('re| are) receiving this.*$"),
     re.compile(r"(?im)^.*you received this (email|newsletter|message).*$"),
-    # "Update your preferences" / "Manage preferences"
     re.compile(r"(?im)^.*(manage|update) (your )?(email )?preferences.*$"),
-    # "© 2024 Company Name"
     re.compile(r"(?im)^.*©\s*\d{4}.*$"),
-    # Privacy policy / Terms of service lines
     re.compile(r"(?im)^.*(privacy policy|terms of (service|use)).*$"),
-    # "Add us to your address book"
     re.compile(r"(?im)^.*add (us|.+) to your address book.*$"),
-    # Physical address boilerplate (e.g. "228 Park Ave")
     re.compile(r"(?im)^.*228 Park.*$"),
-    # Bare URLs with no surrounding text
     re.compile(r"(?im)^\s*https?://\S+\s*$"),
-    # Engagement-rating footer phrases
     re.compile(r"(?im)^.*click below to let me know.*$"),
     re.compile(r"(?im)^.*exceeded expectations.*$"),
     re.compile(r"(?im)^.*not feeling it.*$"),
     re.compile(r"(?im)^.*pretty average.*$"),
 ]
 
-# Matches any markdown hyperlink: [text](url)
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 
 
@@ -244,12 +222,10 @@ def clean_markdown(md: str) -> str:
     for pattern in _FOOTER_PATTERNS:
         md = pattern.sub("", md)
 
-    # Collapse runs of 4+ blank lines into 2.
     md = re.sub(r"\n{4,}", "\n\n", md)
 
     lines = []
     for ln in md.splitlines():
-        # Drop lines that are only whitespace or zero-width characters.
         if _ZERO_WIDTH.sub("", ln).strip() == "":
             continue
         lines.append(ln)
@@ -261,9 +237,9 @@ def html_to_markdown(html: str) -> str:
     clean_html = strip_noise_from_html(html)
 
     h = html2text.HTML2Text()
-    h.ignore_tables = True   # flatten table cells to plain text, no pipe tables
+    h.ignore_tables = True   
     h.ignore_images = True
-    h.body_width = 0         # no hard line wrapping
+    h.body_width = 0            
     h.ignore_links = False
     h.ignore_emphasis = False
 
