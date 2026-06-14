@@ -7,8 +7,7 @@ show up across all of them, wrapped in different "this changes everything"
 packaging. Reading them all is a waste; reading none of them means missing
 things. So I built a small machine to do the boring half.
 
-This is that machine. It is a personal tool, not a product. No roadmap, no
-support, no uptime promises. If it breaks, I fix it when I feel like it. You are
+This is that machine. It is a personal tool, not a product. You are
 very welcome to steal it.
 
 ---
