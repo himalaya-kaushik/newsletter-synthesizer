@@ -169,10 +169,14 @@ def strip_noise_from_html(html: str) -> str:
         tag.decompose()
 
     for tag in soup.find_all(True):
+        if tag.attrs is None:   # already decomposed along with a hidden parent (bs4 >= 4.15)
+            continue
         if tag.get("src", "").startswith("data:") or tag.get("href", "").startswith("data:"):
             tag.decompose()
 
     for tag in soup.find_all(style=True):
+        if tag.attrs is None or "style" not in tag.attrs:
+            continue
         style = tag["style"].replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
             tag.decompose()
@@ -349,6 +353,7 @@ def main() -> None:
 
     fetched = 0
     skipped = 0
+    failed = 0
     max_uid = last_uid or 0
 
     for uid in uids:
@@ -362,8 +367,12 @@ def main() -> None:
         if path.exists():
             skipped += 1
         else:
-            write_newsletter(path, msg)
-            fetched += 1
+            try:
+                write_newsletter(path, msg)
+                fetched += 1
+            except Exception as exc:   # one malformed email must not kill the run
+                failed += 1
+                print(f"::warning::Skipping UID {uid} ({path.name}): {type(exc).__name__}: {exc}")
 
         max_uid = max(max_uid, uid)
 
@@ -375,6 +384,8 @@ def main() -> None:
     summary_parts = [f"Fetched {fetched} new newsletter{'s' if fetched != 1 else ''}."]
     if skipped:
         summary_parts.append(f"Skipped {skipped} already-existing file{'s' if skipped != 1 else ''}.")
+    if failed:
+        summary_parts.append(f"FAILED to convert {failed}.")
     print(" ".join(summary_parts))
 
 
